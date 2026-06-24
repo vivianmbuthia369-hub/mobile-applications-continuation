@@ -10,22 +10,26 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB(
-      'recipes_v2.db',
-    ); // Changed file name to ensure a clean setup
+    _database = await _initDB('recipes_v2.db');
     return _database!;
   }
 
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
-    // Setting version to 2 for the new relational schema design
-    return await openDatabase(path, version: 2, onCreate: _createDB);
+
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _createDB,
+      // CRITICAL FOR TASK 3: This enables the Foreign Key constraints
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
+    );
   }
 
-  /// WEEK 7 SCHEMA: Relational Tables with Constraints
   Future _createDB(Database db, int version) async {
-    // 1. Parent Table: Core Recipes
     await db.execute('''
       CREATE TABLE saved_recipes (
         id TEXT PRIMARY KEY,
@@ -36,8 +40,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. Child Table: Meal Plans (Linked by a Foreign Key)
-    // ON DELETE CASCADE means if you delete a recipe, its scheduled meals are cleared too!
     await db.execute('''
       CREATE TABLE meal_plans (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,10 +51,7 @@ class DatabaseHelper {
     ''');
   }
 
-  // ==========================================
-  // RECIPE FUNCTIONS (Your Existing Working Code)
-  // ==========================================
-
+  // RECIPE FUNCTIONS
   Future<int> insertRecipe(Recipe recipe) async {
     final db = await instance.database;
     return await db.insert(
@@ -73,11 +72,7 @@ class DatabaseHelper {
     return await db.delete('saved_recipes', where: 'id = ?', whereArgs: [id]);
   }
 
-  // ==========================================
-  // MEAL PLAN FUNCTIONS (New Week 7 Additions)
-  // ==========================================
-
-  /// Inserts a newly scheduled meal slot into the database
+  // MEAL PLAN FUNCTIONS
   Future<int> insertMealPlan(
     String date,
     String mealType,
@@ -91,12 +86,9 @@ class DatabaseHelper {
     });
   }
 
-  /// WEEK 7 ADVANCED REQ: Fetch data using an SQL INNER JOIN
-  /// This pulls the calendar data AND matches it with the recipe image/name automatically!
   Future<List<Map<String, dynamic>>> fetchMealPlansWithRecipes() async {
     final db = await instance.database;
-
-    final List<Map<String, dynamic>> result = await db.rawQuery('''
+    return await db.rawQuery('''
       SELECT 
         meal_plans.id AS mealPlanId,
         meal_plans.planned_date AS date,
@@ -108,11 +100,8 @@ class DatabaseHelper {
       INNER JOIN saved_recipes ON meal_plans.recipe_id = saved_recipes.id
       ORDER BY meal_plans.planned_date ASC
     ''');
-
-    return result;
   }
 
-  /// Removes a scheduled meal slot by its unique ID
   Future<int> deleteMealPlan(int mealPlanId) async {
     final db = await instance.database;
     return await db.delete(
